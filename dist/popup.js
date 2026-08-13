@@ -246,30 +246,40 @@ function render() {
         const actions = document.createElement("div");
         actions.className = "timer-actions";
         if (!isCompleted) {
-            const togglePause = document.createElement("button");
-            togglePause.type = "button";
-            togglePause.dataset.id = timer.id;
-            togglePause.dataset.action = isPaused ? "resume" : "pause";
-            togglePause.textContent = isPaused ? "Resume" : "Pause";
-            actions.append(togglePause);
+            actions.append(createTimerActionButton({
+                timerId: timer.id,
+                action: isPaused ? "resume" : "pause",
+                label: isPaused ? "Resume" : "Pause",
+                icon: isPaused ? "▶" : "⏸"
+            }));
         }
-        const reset = document.createElement("button");
-        reset.type = "button";
-        reset.dataset.id = timer.id;
-        reset.dataset.action = "reset";
-        reset.textContent = "Reset";
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.dataset.id = timer.id;
-        remove.dataset.action = "remove";
-        remove.textContent = "Remove";
-        actions.append(reset, remove);
+        actions.append(createTimerActionButton({
+            timerId: timer.id,
+            action: "reset",
+            label: "Reset",
+            icon: "↻"
+        }), createTimerActionButton({
+            timerId: timer.id,
+            action: "remove",
+            label: "Remove",
+            icon: "×"
+        }));
         meta.append(warning, finish);
         content.append(title, meta);
         item.append(content, actions);
         fragment.append(item);
     }
     listEl.append(fragment);
+}
+function createTimerActionButton({ timerId, action, label, icon }) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.id = timerId;
+    button.dataset.action = action;
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.textContent = icon;
+    return button;
 }
 function capWarningByDuration() {
     const durationMinutes = readNumberInput(durationInput);

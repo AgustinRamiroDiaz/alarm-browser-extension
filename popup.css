@@ -247,17 +247,22 @@ button:hover {
 
 .timer-actions {
   display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 32px;
   gap: 6px;
 }
 
 .timer-actions button {
-  min-width: 72px;
-  min-height: 30px;
-  padding: 0 10px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
   color: var(--accent);
   background: transparent;
   border: 1px solid rgb(37 111 104 / 35%);
-  font-size: 12px;
+  font-size: 17px;
+  line-height: 1;
 }
 
 .timer-actions button:hover {
