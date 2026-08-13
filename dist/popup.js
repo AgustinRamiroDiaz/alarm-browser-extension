@@ -8,6 +8,10 @@ const labelInput = queryElement("#label");
 const durationInput = queryElement("#duration");
 const warningInput = queryElement("#warning");
 const errorEl = queryElement("#formError");
+const debugTimerForm = queryElement("#debugTimerForm");
+const debugDurationInput = queryElement("#debugDuration");
+const debugWarningInput = queryElement("#debugWarning");
+const debugTimerErrorEl = queryElement("#debugTimerError");
 const listEl = queryElement("#timerList");
 const emptyEl = queryElement("#emptyState");
 const notificationStatusEl = queryElement("#notificationStatus");
@@ -25,11 +29,20 @@ window.addEventListener("unload", () => {
 form.addEventListener("submit", (event) => {
     void handleSubmit(event);
 });
+debugTimerForm.addEventListener("submit", (event) => {
+    void handleDebugTimerSubmit(event);
+});
 durationInput.addEventListener("input", () => {
     capWarningByDuration();
 });
 warningInput.addEventListener("input", () => {
     capWarningByDuration();
+});
+debugDurationInput.addEventListener("input", () => {
+    capDebugWarningByDuration();
+});
+debugWarningInput.addEventListener("input", () => {
+    capDebugWarningByDuration();
 });
 listEl.addEventListener("click", (event) => {
     void handleTimerListClick(event);
@@ -39,6 +52,7 @@ testNotificationButton.addEventListener("click", () => {
 });
 async function initializePopup() {
     capWarningByDuration();
+    capDebugWarningByDuration();
     await renderNotificationStatus();
     timers = await getTimers();
     render();
@@ -94,27 +108,62 @@ async function handleSubmit(event) {
         errorEl.textContent = "Warning must be less than the timer duration.";
         return;
     }
-    const now = Date.now();
-    const id = crypto.randomUUID();
     const label = labelInput.value.trim() || `${durationMinutes} minute timer`;
-    const timer = {
-        id,
+    await createTimer({
         label,
         durationMinutes,
         warningMinutes,
-        createdAt: now,
-        warningAt: now + (durationMinutes - warningMinutes) * 60 * 1000,
-        endsAt: now + durationMinutes * 60 * 1000
-    };
-    timers = sortTimers([...timers, timer]);
-    await setTimers(timers);
-    await scheduleTimer(timer);
+        durationMs: durationMinutes * 60 * 1000,
+        warningMs: warningMinutes * 60 * 1000
+    });
     form.reset();
     durationInput.value = String(DEFAULT_DURATION_MINUTES);
     warningInput.value = String(DEFAULT_WARNING_MINUTES);
     capWarningByDuration();
     labelInput.focus();
     render();
+}
+async function handleDebugTimerSubmit(event) {
+    event.preventDefault();
+    debugTimerErrorEl.textContent = "";
+    capDebugWarningByDuration();
+    const durationSeconds = Number(debugDurationInput.value);
+    const warningSeconds = Number(debugWarningInput.value);
+    if (!Number.isFinite(durationSeconds) || durationSeconds < 1) {
+        debugTimerErrorEl.textContent = "Duration must be at least 1 second.";
+        return;
+    }
+    if (!Number.isFinite(warningSeconds) || warningSeconds < 0) {
+        debugTimerErrorEl.textContent = "Warning must be 0 seconds or more.";
+        return;
+    }
+    if (warningSeconds >= durationSeconds) {
+        debugTimerErrorEl.textContent = "Warning must be less than the timer duration.";
+        return;
+    }
+    await createTimer({
+        label: `${durationSeconds} second test`,
+        durationMinutes: durationSeconds / 60,
+        warningMinutes: warningSeconds / 60,
+        durationMs: durationSeconds * 1000,
+        warningMs: warningSeconds * 1000
+    });
+    render();
+}
+async function createTimer({ label, durationMinutes, warningMinutes, durationMs, warningMs }) {
+    const now = Date.now();
+    const timer = {
+        id: crypto.randomUUID(),
+        label,
+        durationMinutes,
+        warningMinutes,
+        createdAt: now,
+        warningAt: now + durationMs - warningMs,
+        endsAt: now + durationMs
+    };
+    timers = sortTimers([...timers, timer]);
+    await setTimers(timers);
+    await scheduleTimer(timer);
 }
 async function handleTimerListClick(event) {
     const target = event.target;
@@ -150,14 +199,14 @@ async function resetTimer(timerId) {
         return;
     await clearTimerAlarms(timerId);
     const now = Date.now();
-    const fullDurationMs = timer.durationMinutes * 60 * 1000;
+    const fullDurationMs = getTimerDurationMs(timer);
     const resetTimer = {
         ...timer,
         createdAt: now,
         pausedAt: now,
         remainingMs: fullDurationMs,
-        warningAt: now + (timer.durationMinutes - timer.warningMinutes) * 60 * 1000,
-        endsAt: now + timer.durationMinutes * 60 * 1000,
+        warningAt: now + Math.max(0, fullDurationMs - timer.warningMinutes * 60 * 1000),
+        endsAt: now + fullDurationMs,
         completedAt: undefined
     };
     timers = sortTimers(timers.map((item) => (item.id === timerId ? resetTimer : item)));
@@ -184,7 +233,7 @@ async function resumeTimer(timerId) {
     if (!timer || !timer.pausedAt || timer.completedAt)
         return;
     const now = Date.now();
-    const remainingMs = timer.remainingMs ?? timer.durationMinutes * 60 * 1000;
+    const remainingMs = timer.remainingMs ?? getTimerDurationMs(timer);
     const resumedTimer = {
         ...timer,
         pausedAt: undefined,
@@ -302,6 +351,15 @@ function capWarningByDuration() {
         warningInput.value = String(maxWarningMinutes);
     }
 }
+function capDebugWarningByDuration() {
+    const durationSeconds = readNumberInput(debugDurationInput);
+    const maxWarningSeconds = getMaxWarningSeconds(durationSeconds);
+    debugWarningInput.max = String(maxWarningSeconds);
+    const warningSeconds = readNumberInput(debugWarningInput);
+    if (warningSeconds > maxWarningSeconds) {
+        debugWarningInput.value = String(maxWarningSeconds);
+    }
+}
 function getWarningText(timer, now) {
     if (isTimerCompleted(timer, now)) {
         return timer.warningMinutes > 0 ? "Warning sent" : "No warning";
@@ -331,7 +389,7 @@ function getProgressPercent(timer, now) {
     if (isTimerCompleted(timer, now)) {
         return 100;
     }
-    const totalMs = timer.durationMinutes * 60 * 1000;
+    const totalMs = getTimerDurationMs(timer);
     const remainingMs = isTimerPaused(timer)
         ? timer.remainingMs ?? totalMs
         : Math.max(0, timer.endsAt - now);
@@ -365,6 +423,15 @@ function getMaxWarningMinutes(durationMinutes) {
         return 0;
     }
     return Math.max(0, Math.min(MAX_DURATION_MINUTES - 1, Math.floor(durationMinutes) - 1));
+}
+function getMaxWarningSeconds(durationSeconds) {
+    if (!Number.isFinite(durationSeconds) || durationSeconds < 1) {
+        return 0;
+    }
+    return Math.max(0, Math.floor(durationSeconds) - 1);
+}
+function getTimerDurationMs(timer) {
+    return Math.max(1, timer.endsAt - timer.createdAt);
 }
 function readNumberInput(input) {
     return Number(input.value);
