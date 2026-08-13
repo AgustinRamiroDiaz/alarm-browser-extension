@@ -257,6 +257,17 @@ function render() {
         progress.append(progressFill);
         const actions = document.createElement("div");
         actions.className = "timer-actions";
+        actions.append(createTimerActionButton({
+            timerId: timer.id,
+            action: "remove",
+            label: "Remove",
+            icon: "×"
+        }), createTimerActionButton({
+            timerId: timer.id,
+            action: "reset",
+            label: "Reset",
+            icon: "↻"
+        }));
         if (!isCompleted) {
             actions.append(createTimerActionButton({
                 timerId: timer.id,
@@ -265,17 +276,6 @@ function render() {
                 icon: isPaused ? "▶" : "⏸"
             }));
         }
-        actions.append(createTimerActionButton({
-            timerId: timer.id,
-            action: "reset",
-            label: "Reset",
-            icon: "↻"
-        }), createTimerActionButton({
-            timerId: timer.id,
-            action: "remove",
-            label: "Remove",
-            icon: "×"
-        }));
         meta.append(warning, finish);
         content.append(title, meta, progress);
         item.append(content, actions);
