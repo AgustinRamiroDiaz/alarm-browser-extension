@@ -17,3 +17,5 @@ A minimal Chrome Manifest V3 extension for creating timers with a warning notifi
 Use `npm run check` for type-checking and `npm run build` to compile `src/*.ts` into `dist/*.js`.
 
 The extension uses Chrome alarms so timers keep working after the popup closes. Active timers are stored in `chrome.storage.local`.
+
+Warning and completion sounds are played by an offscreen document using Web Audio. Chrome notifications do not support custom sound files directly, so the background service worker creates `offscreen.html` when it needs audio playback.

@@ -1,6 +1,8 @@
 const TIMERS_KEY = "timers";
 const ALARM_PREFIX = "timer:";
 const ICON_URL = "icon.svg";
+const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
+let creatingOffscreenDocument = null;
 chrome.runtime.onInstalled.addListener(() => {
     void restoreScheduledAlarms();
 });
@@ -28,6 +30,7 @@ async function handleAlarm(alarm) {
             title: "Timer warning",
             message: `${timer.label} ends in about ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"}.`
         });
+        await playTimerSound("warning");
         return;
     }
     await chrome.notifications.create(`finish:${timer.id}:${Date.now()}`, {
@@ -36,6 +39,7 @@ async function handleAlarm(alarm) {
         title: "Timer finished",
         message: timer.label
     });
+    await playTimerSound("finish");
     await setTimers(timers.filter((item) => item.id !== timer.id));
     await chrome.alarms.clear(makeAlarmName(timer.id, "warning"));
 }
@@ -51,6 +55,7 @@ async function restoreScheduledAlarms() {
                 title: "Timer finished",
                 message: timer.label
             });
+            await playTimerSound("finish");
             continue;
         }
         activeTimers.push(timer);
@@ -69,6 +74,32 @@ async function scheduleTimerAlarms(timer) {
             when: timer.warningAt
         });
     }
+}
+async function playTimerSound(sound) {
+    await ensureOffscreenDocument();
+    await chrome.runtime.sendMessage({
+        target: "timer-audio",
+        type: "play-sound",
+        sound
+    });
+}
+async function ensureOffscreenDocument() {
+    const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
+    const contexts = await chrome.runtime.getContexts({
+        contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+        documentUrls: [offscreenUrl]
+    });
+    if (contexts.length > 0)
+        return;
+    if (!creatingOffscreenDocument) {
+        creatingOffscreenDocument = chrome.offscreen.createDocument({
+            url: OFFSCREEN_DOCUMENT_PATH,
+            reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
+            justification: "Play warning and completion sounds for timer notifications."
+        });
+    }
+    await creatingOffscreenDocument;
+    creatingOffscreenDocument = null;
 }
 function makeAlarmName(timerId, kind) {
     return `${ALARM_PREFIX}${timerId}:${kind}`;
