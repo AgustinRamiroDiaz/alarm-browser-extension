@@ -4,9 +4,15 @@
   "description": "Create timers that warn you before they finish.",
   "version": "0.1.0",
   "permissions": ["alarms", "notifications", "offscreen", "storage"],
+  "icons": {
+    "128": "icons/timer-128.png"
+  },
   "action": {
     "default_title": "Timer Warnings",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icons/timer-128.png"
+    }
   },
   "background": {
     "service_worker": "dist/background.js",

@@ -10,10 +10,14 @@ type Timer = {
 
 type TimerAlarmKind = "warning" | "finish";
 type TimerSound = "warning" | "finish";
+type TimerNotificationText = {
+  title: string;
+  message: string;
+};
 
 const TIMERS_KEY = "timers";
 const ALARM_PREFIX = "timer:";
-const ICON_URL = "icon.svg";
+const ICON_URL = "icons/timer-128.png";
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 
 let creatingOffscreenDocument: Promise<void> | null = null;
@@ -42,23 +46,17 @@ async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
     if (Date.now() >= timer.endsAt) return;
 
     const minutesLeft = Math.max(1, Math.round((timer.endsAt - Date.now()) / 60000));
-    await chrome.notifications.create(`warning:${timer.id}:${Date.now()}`, {
-      type: "basic",
-      iconUrl: ICON_URL,
+    await notifyAndPlaySound("warning", `warning:${timer.id}:${Date.now()}`, {
       title: "Timer warning",
       message: `${timer.label} ends in about ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"}.`
     });
-    await playTimerSound("warning");
     return;
   }
 
-  await chrome.notifications.create(`finish:${timer.id}:${Date.now()}`, {
-    type: "basic",
-    iconUrl: ICON_URL,
+  await notifyAndPlaySound("finish", `finish:${timer.id}:${Date.now()}`, {
     title: "Timer finished",
     message: timer.label
   });
-  await playTimerSound("finish");
 
   await setTimers(timers.filter((item) => item.id !== timer.id));
   await chrome.alarms.clear(makeAlarmName(timer.id, "warning"));
@@ -71,13 +69,10 @@ async function restoreScheduledAlarms(): Promise<void> {
 
   for (const timer of timers) {
     if (timer.endsAt <= now) {
-      await chrome.notifications.create(`missed:${timer.id}:${now}`, {
-        type: "basic",
-        iconUrl: ICON_URL,
+      await notifyAndPlaySound("finish", `missed:${timer.id}:${now}`, {
         title: "Timer finished",
         message: timer.label
       });
-      await playTimerSound("finish");
       continue;
     }
 
@@ -100,6 +95,35 @@ async function scheduleTimerAlarms(timer: Timer): Promise<void> {
       when: timer.warningAt
     });
   }
+}
+
+async function notifyAndPlaySound(
+  sound: TimerSound,
+  notificationId: string,
+  notification: TimerNotificationText
+): Promise<void> {
+  const results = await Promise.allSettled([
+    showNotification(notificationId, notification),
+    playTimerSound(sound)
+  ]);
+
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.warn("Timer notification side effect failed:", result.reason);
+    }
+  }
+}
+
+async function showNotification(
+  notificationId: string,
+  notification: TimerNotificationText
+): Promise<void> {
+  await chrome.notifications.create(notificationId, {
+    type: "basic",
+    iconUrl: ICON_URL,
+    title: notification.title,
+    message: notification.message
+  });
 }
 
 async function playTimerSound(sound: TimerSound): Promise<void> {
