@@ -8,17 +8,10 @@
   </head>
   <body>
     <main class="app">
-      <header class="header">
-        <div>
-          <h1>Timers</h1>
-          <p id="summary">No active timers</p>
-        </div>
-      </header>
-
-      <div class="status-row">
-        <p id="notificationStatus" class="status" role="status">Checking notification access...</p>
-        <button id="testNotification" class="icon-button" type="button" title="Test notification" aria-label="Test notification">Test</button>
-      </div>
+      <section class="timers-section" aria-label="Active timers">
+        <ul id="timerList" class="timer-list"></ul>
+        <p id="emptyState" class="empty">Create a timer and Chrome will notify you before it finishes.</p>
+      </section>
 
       <form id="timerForm" class="timer-form">
         <label>
@@ -48,10 +41,13 @@
         <p id="formError" class="error" role="status"></p>
       </form>
 
-      <section aria-label="Active timers">
-        <ul id="timerList" class="timer-list"></ul>
-        <p id="emptyState" class="empty">Create a timer and Chrome will notify you before it finishes.</p>
-      </section>
+      <details class="debug-panel">
+        <summary>Advanced diagnostics</summary>
+        <div class="status-row">
+          <p id="notificationStatus" class="status" role="status">Checking notification access...</p>
+          <button id="testNotification" class="icon-button" type="button" title="Test notification" aria-label="Test notification">Test</button>
+        </div>
+      </details>
     </main>
 
     <script type="module" src="dist/popup.js"></script>

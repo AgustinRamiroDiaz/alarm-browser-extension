@@ -33,7 +33,6 @@ const warningInput = queryElement<HTMLInputElement>("#warning");
 const errorEl = queryElement<HTMLParagraphElement>("#formError");
 const listEl = queryElement<HTMLUListElement>("#timerList");
 const emptyEl = queryElement<HTMLParagraphElement>("#emptyState");
-const summaryEl = queryElement<HTMLParagraphElement>("#summary");
 const notificationStatusEl = queryElement<HTMLParagraphElement>("#notificationStatus");
 const testNotificationButton = queryElement<HTMLButtonElement>("#testNotification");
 
@@ -197,10 +196,6 @@ async function scheduleTimer(timer: Timer): Promise<void> {
 function render(): void {
   const now = Date.now();
   timers = timers.filter((timer) => timer.endsAt > now);
-
-  summaryEl.textContent = timers.length
-    ? `${timers.length} active timer${timers.length === 1 ? "" : "s"}`
-    : "No active timers";
 
   emptyEl.classList.toggle("hidden", timers.length > 0);
   listEl.textContent = "";

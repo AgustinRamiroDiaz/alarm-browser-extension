@@ -33,28 +33,8 @@ input {
   padding: 18px;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-h1 {
-  margin: 0;
-  font-size: 24px;
-  line-height: 1.1;
-  letter-spacing: 0;
-}
-
 p {
   margin: 0;
-}
-
-#summary {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 13px;
 }
 
 .status-row {
@@ -62,7 +42,6 @@ p {
   grid-template-columns: 1fr auto;
   gap: 8px;
   align-items: stretch;
-  margin-bottom: 12px;
 }
 
 .status {
@@ -94,6 +73,29 @@ p {
   background: var(--accent);
 }
 
+.debug-panel {
+  margin: -4px 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 32%);
+}
+
+.debug-panel summary {
+  padding: 10px 12px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.debug-panel summary:hover {
+  color: var(--text);
+}
+
+.debug-panel .status-row {
+  padding: 0 10px 10px;
+}
+
 .timer-form {
   display: grid;
   gap: 12px;
@@ -103,6 +105,10 @@ p {
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
+}
+
+.timers-section {
+  margin-bottom: 16px;
 }
 
 label {

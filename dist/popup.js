@@ -10,7 +10,6 @@ const warningInput = queryElement("#warning");
 const errorEl = queryElement("#formError");
 const listEl = queryElement("#timerList");
 const emptyEl = queryElement("#emptyState");
-const summaryEl = queryElement("#summary");
 const notificationStatusEl = queryElement("#notificationStatus");
 const testNotificationButton = queryElement("#testNotification");
 let timers = [];
@@ -146,9 +145,6 @@ async function scheduleTimer(timer) {
 function render() {
     const now = Date.now();
     timers = timers.filter((timer) => timer.endsAt > now);
-    summaryEl.textContent = timers.length
-        ? `${timers.length} active timer${timers.length === 1 ? "" : "s"}`
-        : "No active timers";
     emptyEl.classList.toggle("hidden", timers.length > 0);
     listEl.textContent = "";
     const fragment = document.createDocumentFragment();
