@@ -116,6 +116,7 @@ async function restoreScheduledAlarms(): Promise<void> {
   const timers = await getTimers();
   const now = Date.now();
   const activeTimers: Timer[] = [];
+  let changed = false;
 
   for (const timer of timers) {
     if (timer.completedAt) {
@@ -134,6 +135,7 @@ async function restoreScheduledAlarms(): Promise<void> {
         message: timer.label
       });
       activeTimers.push({ ...timer, completedAt: now });
+      changed = true;
       continue;
     }
 
@@ -141,7 +143,7 @@ async function restoreScheduledAlarms(): Promise<void> {
     await scheduleTimerAlarms(timer);
   }
 
-  if (activeTimers.length !== timers.length) {
+  if (changed || activeTimers.length !== timers.length) {
     await setTimers(activeTimers);
   }
 }
