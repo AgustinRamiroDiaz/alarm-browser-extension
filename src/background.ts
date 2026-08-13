@@ -6,6 +6,9 @@ type Timer = {
   createdAt: number;
   warningAt: number;
   endsAt: number;
+  completedAt?: number;
+  pausedAt?: number;
+  remainingMs?: number;
 };
 
 type TimerAlarmKind = "warning" | "finish";
@@ -83,6 +86,8 @@ async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
   const timers = await getTimers();
   const timer = timers.find((item) => item.id === parsed.timerId);
   if (!timer) return;
+  if (timer.completedAt) return;
+  if (timer.pausedAt) return;
 
   if (parsed.kind === "warning") {
     if (Date.now() >= timer.endsAt) return;
@@ -95,12 +100,15 @@ async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
     return;
   }
 
-  await notifyAndPlaySound("finish", `finish:${timer.id}:${Date.now()}`, {
+  const completedAt = Date.now();
+  await notifyAndPlaySound("finish", `finish:${timer.id}:${completedAt}`, {
     title: "Timer finished",
     message: timer.label
   });
 
-  await setTimers(timers.filter((item) => item.id !== timer.id));
+  await setTimers(
+    timers.map((item) => (item.id === timer.id ? { ...item, completedAt } : item))
+  );
   await chrome.alarms.clear(makeAlarmName(timer.id, "warning"));
 }
 
@@ -110,11 +118,22 @@ async function restoreScheduledAlarms(): Promise<void> {
   const activeTimers: Timer[] = [];
 
   for (const timer of timers) {
+    if (timer.completedAt) {
+      activeTimers.push(timer);
+      continue;
+    }
+
+    if (timer.pausedAt) {
+      activeTimers.push(timer);
+      continue;
+    }
+
     if (timer.endsAt <= now) {
       await notifyAndPlaySound("finish", `missed:${timer.id}:${now}`, {
         title: "Timer finished",
         message: timer.label
       });
+      activeTimers.push({ ...timer, completedAt: now });
       continue;
     }
 

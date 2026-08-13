@@ -6,6 +6,9 @@ type Timer = {
   createdAt: number;
   warningAt: number;
   endsAt: number;
+  completedAt?: number;
+  pausedAt?: number;
+  remainingMs?: number;
 };
 
 type TimerAlarmKind = "warning" | "finish";
@@ -152,7 +155,7 @@ async function handleSubmit(event: SubmitEvent): Promise<void> {
     endsAt: now + durationMinutes * 60 * 1000
   };
 
-  timers = [...timers, timer].sort((a, b) => a.endsAt - b.endsAt);
+  timers = sortTimers([...timers, timer]);
   await setTimers(timers);
   await scheduleTimer(timer);
 
@@ -174,14 +177,103 @@ async function handleTimerListClick(event: MouseEvent): Promise<void> {
   const timerId = button.dataset.id;
   if (!timerId) return;
 
-  timers = timers.filter((timer) => timer.id !== timerId);
+  const action = button.dataset.action;
+  if (action === "reset") {
+    await resetTimer(timerId);
+    return;
+  }
+
+  if (action === "pause") {
+    await pauseTimer(timerId);
+    return;
+  }
+
+  if (action === "resume") {
+    await resumeTimer(timerId);
+    return;
+  }
+
+  if (action === "remove") {
+    await removeTimer(timerId);
+    return;
+  }
+}
+
+async function resetTimer(timerId: string): Promise<void> {
+  const timer = timers.find((item) => item.id === timerId);
+  if (!timer) return;
+
+  await clearTimerAlarms(timerId);
+
+  const now = Date.now();
+  const fullDurationMs = timer.durationMinutes * 60 * 1000;
+  const resetTimer: Timer = {
+    ...timer,
+    createdAt: now,
+    pausedAt: now,
+    remainingMs: fullDurationMs,
+    warningAt: now + (timer.durationMinutes - timer.warningMinutes) * 60 * 1000,
+    endsAt: now + timer.durationMinutes * 60 * 1000,
+    completedAt: undefined
+  };
+
+  timers = sortTimers(timers.map((item) => (item.id === timerId ? resetTimer : item)));
   await setTimers(timers);
-  await chrome.alarms.clear(makeAlarmName(timerId, "warning"));
-  await chrome.alarms.clear(makeAlarmName(timerId, "finish"));
   render();
 }
 
+async function pauseTimer(timerId: string): Promise<void> {
+  const timer = timers.find((item) => item.id === timerId);
+  if (!timer || isTimerCompleted(timer, Date.now()) || timer.pausedAt) return;
+
+  const now = Date.now();
+  const pausedTimer: Timer = {
+    ...timer,
+    pausedAt: now,
+    remainingMs: Math.max(0, timer.endsAt - now)
+  };
+
+  await clearTimerAlarms(timerId);
+  timers = sortTimers(timers.map((item) => (item.id === timerId ? pausedTimer : item)));
+  await setTimers(timers);
+  render();
+}
+
+async function resumeTimer(timerId: string): Promise<void> {
+  const timer = timers.find((item) => item.id === timerId);
+  if (!timer || !timer.pausedAt || timer.completedAt) return;
+
+  const now = Date.now();
+  const remainingMs = timer.remainingMs ?? timer.durationMinutes * 60 * 1000;
+  const resumedTimer: Timer = {
+    ...timer,
+    pausedAt: undefined,
+    remainingMs: undefined,
+    warningAt: now + Math.max(0, remainingMs - timer.warningMinutes * 60 * 1000),
+    endsAt: now + remainingMs
+  };
+
+  timers = sortTimers(timers.map((item) => (item.id === timerId ? resumedTimer : item)));
+  await setTimers(timers);
+  await scheduleTimer(resumedTimer);
+  render();
+}
+
+async function removeTimer(timerId: string): Promise<void> {
+  timers = timers.filter((timer) => timer.id !== timerId);
+  await setTimers(timers);
+  await clearTimerAlarms(timerId);
+  render();
+}
+
+async function clearTimerAlarms(timerId: string): Promise<void> {
+  await chrome.alarms.clear(makeAlarmName(timerId, "warning"));
+  await chrome.alarms.clear(makeAlarmName(timerId, "finish"));
+}
+
 async function scheduleTimer(timer: Timer): Promise<void> {
+  if (timer.completedAt || timer.pausedAt) return;
+
   await chrome.alarms.create(makeAlarmName(timer.id, "finish"), {
     when: timer.endsAt
   });
@@ -195,7 +287,7 @@ async function scheduleTimer(timer: Timer): Promise<void> {
 
 function render(): void {
   const now = Date.now();
-  timers = timers.filter((timer) => timer.endsAt > now);
+  timers = sortTimers(timers);
 
   emptyEl.classList.toggle("hidden", timers.length > 0);
   listEl.textContent = "";
@@ -203,7 +295,11 @@ function render(): void {
   const fragment = document.createDocumentFragment();
   for (const timer of timers) {
     const item = document.createElement("li");
-    item.className = "timer";
+    const isCompleted = isTimerCompleted(timer, now);
+    const isPaused = isTimerPaused(timer);
+    item.className = ["timer", isCompleted ? "completed" : "", isPaused ? "paused" : ""]
+      .filter(Boolean)
+      .join(" ");
 
     const content = document.createElement("div");
 
@@ -219,16 +315,36 @@ function render(): void {
 
     const finish = document.createElement("time");
     finish.dateTime = new Date(timer.endsAt).toISOString();
-    finish.textContent = `Finishes in ${formatRemaining(timer.endsAt - now)}`;
+    finish.textContent = getFinishText(timer, now);
 
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.dataset.id = timer.id;
-    cancel.textContent = "Cancel";
+    const actions = document.createElement("div");
+    actions.className = "timer-actions";
 
+    if (!isCompleted) {
+      const togglePause = document.createElement("button");
+      togglePause.type = "button";
+      togglePause.dataset.id = timer.id;
+      togglePause.dataset.action = isPaused ? "resume" : "pause";
+      togglePause.textContent = isPaused ? "Resume" : "Pause";
+      actions.append(togglePause);
+    }
+
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.dataset.id = timer.id;
+    reset.dataset.action = "reset";
+    reset.textContent = "Reset";
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.dataset.id = timer.id;
+    remove.dataset.action = "remove";
+    remove.textContent = "Remove";
+
+    actions.append(reset, remove);
     meta.append(warning, finish);
     content.append(title, meta);
-    item.append(content, cancel);
+    item.append(content, actions);
     fragment.append(item);
   }
 
@@ -247,6 +363,14 @@ function capWarningByDuration(): void {
 }
 
 function getWarningText(timer: Timer, now: number): string {
+  if (isTimerCompleted(timer, now)) {
+    return timer.warningMinutes > 0 ? "Warning sent" : "No warning";
+  }
+
+  if (isTimerPaused(timer)) {
+    return timer.warningMinutes > 0 ? "Warning paused" : "No warning";
+  }
+
   if (timer.warningMinutes <= 0) {
     return "No warning";
   }
@@ -256,6 +380,44 @@ function getWarningText(timer: Timer, now: number): string {
   }
 
   return `Warning in ${formatRemaining(timer.warningAt - now)}`;
+}
+
+function getFinishText(timer: Timer, now: number): string {
+  if (isTimerCompleted(timer, now)) {
+    const completedAt = timer.completedAt ?? timer.endsAt;
+    return `Finished ${formatTime(completedAt)}`;
+  }
+
+  if (isTimerPaused(timer)) {
+    return `Paused with ${formatRemaining(timer.remainingMs ?? timer.endsAt - now)} left`;
+  }
+
+  return `Finishes in ${formatRemaining(timer.endsAt - now)}`;
+}
+
+function isTimerCompleted(timer: Timer, now: number): boolean {
+  if (timer.pausedAt) return Boolean(timer.completedAt);
+
+  return Boolean(timer.completedAt) || timer.endsAt <= now;
+}
+
+function isTimerPaused(timer: Timer): boolean {
+  return Boolean(timer.pausedAt) && !timer.completedAt;
+}
+
+function sortTimers(nextTimers: Timer[]): Timer[] {
+  const now = Date.now();
+
+  return [...nextTimers].sort((a, b) => {
+    const aCompleted = isTimerCompleted(a, now);
+    const bCompleted = isTimerCompleted(b, now);
+
+    if (aCompleted !== bCompleted) {
+      return aCompleted ? 1 : -1;
+    }
+
+    return a.endsAt - b.endsAt;
+  });
 }
 
 function getMaxWarningMinutes(durationMinutes: number): number {
@@ -281,6 +443,13 @@ function formatRemaining(milliseconds: number): string {
   }
 
   return `${minutes}m ${pad(seconds)}s`;
+}
+
+function formatTime(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(timestamp));
 }
 
 function pad(value: number): string {

@@ -106,7 +106,7 @@ async function handleSubmit(event) {
         warningAt: now + (durationMinutes - warningMinutes) * 60 * 1000,
         endsAt: now + durationMinutes * 60 * 1000
     };
-    timers = [...timers, timer].sort((a, b) => a.endsAt - b.endsAt);
+    timers = sortTimers([...timers, timer]);
     await setTimers(timers);
     await scheduleTimer(timer);
     form.reset();
@@ -126,13 +126,90 @@ async function handleTimerListClick(event) {
     const timerId = button.dataset.id;
     if (!timerId)
         return;
-    timers = timers.filter((timer) => timer.id !== timerId);
+    const action = button.dataset.action;
+    if (action === "reset") {
+        await resetTimer(timerId);
+        return;
+    }
+    if (action === "pause") {
+        await pauseTimer(timerId);
+        return;
+    }
+    if (action === "resume") {
+        await resumeTimer(timerId);
+        return;
+    }
+    if (action === "remove") {
+        await removeTimer(timerId);
+        return;
+    }
+}
+async function resetTimer(timerId) {
+    const timer = timers.find((item) => item.id === timerId);
+    if (!timer)
+        return;
+    await clearTimerAlarms(timerId);
+    const now = Date.now();
+    const fullDurationMs = timer.durationMinutes * 60 * 1000;
+    const resetTimer = {
+        ...timer,
+        createdAt: now,
+        pausedAt: now,
+        remainingMs: fullDurationMs,
+        warningAt: now + (timer.durationMinutes - timer.warningMinutes) * 60 * 1000,
+        endsAt: now + timer.durationMinutes * 60 * 1000,
+        completedAt: undefined
+    };
+    timers = sortTimers(timers.map((item) => (item.id === timerId ? resetTimer : item)));
     await setTimers(timers);
-    await chrome.alarms.clear(makeAlarmName(timerId, "warning"));
-    await chrome.alarms.clear(makeAlarmName(timerId, "finish"));
     render();
 }
+async function pauseTimer(timerId) {
+    const timer = timers.find((item) => item.id === timerId);
+    if (!timer || isTimerCompleted(timer, Date.now()) || timer.pausedAt)
+        return;
+    const now = Date.now();
+    const pausedTimer = {
+        ...timer,
+        pausedAt: now,
+        remainingMs: Math.max(0, timer.endsAt - now)
+    };
+    await clearTimerAlarms(timerId);
+    timers = sortTimers(timers.map((item) => (item.id === timerId ? pausedTimer : item)));
+    await setTimers(timers);
+    render();
+}
+async function resumeTimer(timerId) {
+    const timer = timers.find((item) => item.id === timerId);
+    if (!timer || !timer.pausedAt || timer.completedAt)
+        return;
+    const now = Date.now();
+    const remainingMs = timer.remainingMs ?? timer.durationMinutes * 60 * 1000;
+    const resumedTimer = {
+        ...timer,
+        pausedAt: undefined,
+        remainingMs: undefined,
+        warningAt: now + Math.max(0, remainingMs - timer.warningMinutes * 60 * 1000),
+        endsAt: now + remainingMs
+    };
+    timers = sortTimers(timers.map((item) => (item.id === timerId ? resumedTimer : item)));
+    await setTimers(timers);
+    await scheduleTimer(resumedTimer);
+    render();
+}
+async function removeTimer(timerId) {
+    timers = timers.filter((timer) => timer.id !== timerId);
+    await setTimers(timers);
+    await clearTimerAlarms(timerId);
+    render();
+}
+async function clearTimerAlarms(timerId) {
+    await chrome.alarms.clear(makeAlarmName(timerId, "warning"));
+    await chrome.alarms.clear(makeAlarmName(timerId, "finish"));
+}
 async function scheduleTimer(timer) {
+    if (timer.completedAt || timer.pausedAt)
+        return;
     await chrome.alarms.create(makeAlarmName(timer.id, "finish"), {
         when: timer.endsAt
     });
@@ -144,13 +221,17 @@ async function scheduleTimer(timer) {
 }
 function render() {
     const now = Date.now();
-    timers = timers.filter((timer) => timer.endsAt > now);
+    timers = sortTimers(timers);
     emptyEl.classList.toggle("hidden", timers.length > 0);
     listEl.textContent = "";
     const fragment = document.createDocumentFragment();
     for (const timer of timers) {
         const item = document.createElement("li");
-        item.className = "timer";
+        const isCompleted = isTimerCompleted(timer, now);
+        const isPaused = isTimerPaused(timer);
+        item.className = ["timer", isCompleted ? "completed" : "", isPaused ? "paused" : ""]
+            .filter(Boolean)
+            .join(" ");
         const content = document.createElement("div");
         const title = document.createElement("strong");
         title.textContent = timer.label;
@@ -161,14 +242,31 @@ function render() {
         warning.textContent = getWarningText(timer, now);
         const finish = document.createElement("time");
         finish.dateTime = new Date(timer.endsAt).toISOString();
-        finish.textContent = `Finishes in ${formatRemaining(timer.endsAt - now)}`;
-        const cancel = document.createElement("button");
-        cancel.type = "button";
-        cancel.dataset.id = timer.id;
-        cancel.textContent = "Cancel";
+        finish.textContent = getFinishText(timer, now);
+        const actions = document.createElement("div");
+        actions.className = "timer-actions";
+        if (!isCompleted) {
+            const togglePause = document.createElement("button");
+            togglePause.type = "button";
+            togglePause.dataset.id = timer.id;
+            togglePause.dataset.action = isPaused ? "resume" : "pause";
+            togglePause.textContent = isPaused ? "Resume" : "Pause";
+            actions.append(togglePause);
+        }
+        const reset = document.createElement("button");
+        reset.type = "button";
+        reset.dataset.id = timer.id;
+        reset.dataset.action = "reset";
+        reset.textContent = "Reset";
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.dataset.id = timer.id;
+        remove.dataset.action = "remove";
+        remove.textContent = "Remove";
+        actions.append(reset, remove);
         meta.append(warning, finish);
         content.append(title, meta);
-        item.append(content, cancel);
+        item.append(content, actions);
         fragment.append(item);
     }
     listEl.append(fragment);
@@ -183,6 +281,12 @@ function capWarningByDuration() {
     }
 }
 function getWarningText(timer, now) {
+    if (isTimerCompleted(timer, now)) {
+        return timer.warningMinutes > 0 ? "Warning sent" : "No warning";
+    }
+    if (isTimerPaused(timer)) {
+        return timer.warningMinutes > 0 ? "Warning paused" : "No warning";
+    }
     if (timer.warningMinutes <= 0) {
         return "No warning";
     }
@@ -190,6 +294,35 @@ function getWarningText(timer, now) {
         return "Warning sent";
     }
     return `Warning in ${formatRemaining(timer.warningAt - now)}`;
+}
+function getFinishText(timer, now) {
+    if (isTimerCompleted(timer, now)) {
+        const completedAt = timer.completedAt ?? timer.endsAt;
+        return `Finished ${formatTime(completedAt)}`;
+    }
+    if (isTimerPaused(timer)) {
+        return `Paused with ${formatRemaining(timer.remainingMs ?? timer.endsAt - now)} left`;
+    }
+    return `Finishes in ${formatRemaining(timer.endsAt - now)}`;
+}
+function isTimerCompleted(timer, now) {
+    if (timer.pausedAt)
+        return Boolean(timer.completedAt);
+    return Boolean(timer.completedAt) || timer.endsAt <= now;
+}
+function isTimerPaused(timer) {
+    return Boolean(timer.pausedAt) && !timer.completedAt;
+}
+function sortTimers(nextTimers) {
+    const now = Date.now();
+    return [...nextTimers].sort((a, b) => {
+        const aCompleted = isTimerCompleted(a, now);
+        const bCompleted = isTimerCompleted(b, now);
+        if (aCompleted !== bCompleted) {
+            return aCompleted ? 1 : -1;
+        }
+        return a.endsAt - b.endsAt;
+    });
 }
 function getMaxWarningMinutes(durationMinutes) {
     if (!Number.isFinite(durationMinutes) || durationMinutes < 1) {
@@ -209,6 +342,12 @@ function formatRemaining(milliseconds) {
         return `${hours}h ${pad(minutes)}m ${pad(seconds)}s`;
     }
     return `${minutes}m ${pad(seconds)}s`;
+}
+function formatTime(timestamp) {
+    return new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit"
+    }).format(new Date(timestamp));
 }
 function pad(value) {
     return String(value).padStart(2, "0");

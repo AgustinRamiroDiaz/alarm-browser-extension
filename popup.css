@@ -217,6 +217,14 @@ button:hover {
   border-radius: 8px;
 }
 
+.timer.completed {
+  opacity: 0.72;
+}
+
+.timer.paused {
+  background: rgb(255 255 255 / 48%);
+}
+
 .timer strong {
   display: block;
   overflow: hidden;
@@ -237,15 +245,31 @@ button:hover {
   font-size: 13px;
 }
 
-.timer button {
-  min-width: 76px;
-  min-height: 34px;
-  color: var(--danger);
+.timer-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.timer-actions button {
+  min-width: 72px;
+  min-height: 30px;
+  padding: 0 10px;
+  color: var(--accent);
   background: transparent;
+  border: 1px solid rgb(37 111 104 / 35%);
+  font-size: 12px;
+}
+
+.timer-actions button:hover {
+  background: rgb(37 111 104 / 10%);
+}
+
+.timer-actions button[data-action="remove"] {
+  color: var(--danger);
   border: 1px solid rgb(163 61 49 / 35%);
 }
 
-.timer button:hover {
+.timer-actions button[data-action="remove"]:hover {
   background: rgb(163 61 49 / 10%);
 }
 
