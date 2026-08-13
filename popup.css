@@ -221,10 +221,6 @@ button:hover {
   opacity: 0.72;
 }
 
-.timer.paused {
-  background: rgb(255 255 255 / 48%);
-}
-
 .timer strong {
   display: block;
   overflow: hidden;
@@ -264,10 +260,6 @@ button:hover {
 
 .timer.completed .timer-progress-fill {
   background: var(--muted);
-}
-
-.timer.paused .timer-progress-fill {
-  background: var(--accent-strong);
 }
 
 .timer-actions {
