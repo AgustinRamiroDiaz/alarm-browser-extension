@@ -1,0 +1,14 @@
+{
+  "name": "timer-warnings-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Chrome extension for timers with warning notifications.",
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.326",
+    "typescript": "^5.9.2"
+  }
+}
