@@ -3,6 +3,8 @@ type Timer = {
   label: string;
   durationMinutes: number;
   warningMinutes: number;
+  originalDurationMs?: number;
+  originalWarningMs?: number;
   createdAt: number;
   warningAt: number;
   endsAt: number;

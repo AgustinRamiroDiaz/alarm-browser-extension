@@ -3,6 +3,8 @@ type Timer = {
   label: string;
   durationMinutes: number;
   warningMinutes: number;
+  originalDurationMs?: number;
+  originalWarningMs?: number;
   createdAt: number;
   warningAt: number;
   endsAt: number;
@@ -230,6 +232,8 @@ async function createTimer({
     label,
     durationMinutes,
     warningMinutes,
+    originalDurationMs: durationMs,
+    originalWarningMs: warningMs,
     createdAt: now,
     warningAt: now + durationMs - warningMs,
     endsAt: now + durationMs
@@ -280,12 +284,13 @@ async function resetTimer(timerId: string): Promise<void> {
 
   const now = Date.now();
   const fullDurationMs = getTimerDurationMs(timer);
+  const warningMs = getTimerWarningMs(timer);
   const resetTimer: Timer = {
     ...timer,
     createdAt: now,
     pausedAt: now,
     remainingMs: fullDurationMs,
-    warningAt: now + Math.max(0, fullDurationMs - timer.warningMinutes * 60 * 1000),
+    warningAt: now + Math.max(0, fullDurationMs - warningMs),
     endsAt: now + fullDurationMs,
     completedAt: undefined
   };
@@ -318,11 +323,12 @@ async function resumeTimer(timerId: string): Promise<void> {
 
   const now = Date.now();
   const remainingMs = timer.remainingMs ?? getTimerDurationMs(timer);
+  const warningMs = getTimerWarningMs(timer);
   const resumedTimer: Timer = {
     ...timer,
     pausedAt: undefined,
     remainingMs: undefined,
-    warningAt: now + Math.max(0, remainingMs - timer.warningMinutes * 60 * 1000),
+    warningAt: now + Math.max(0, remainingMs - warningMs),
     endsAt: now + remainingMs
   };
 
@@ -579,7 +585,11 @@ function getMaxWarningSeconds(durationSeconds: number): number {
 }
 
 function getTimerDurationMs(timer: Timer): number {
-  return Math.max(1, timer.endsAt - timer.createdAt);
+  return Math.max(1, timer.originalDurationMs ?? timer.endsAt - timer.createdAt);
+}
+
+function getTimerWarningMs(timer: Timer): number {
+  return Math.max(0, timer.originalWarningMs ?? timer.warningMinutes * 60 * 1000);
 }
 
 function readNumberInput(input: HTMLInputElement): number {

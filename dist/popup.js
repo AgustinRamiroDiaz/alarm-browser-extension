@@ -157,6 +157,8 @@ async function createTimer({ label, durationMinutes, warningMinutes, durationMs,
         label,
         durationMinutes,
         warningMinutes,
+        originalDurationMs: durationMs,
+        originalWarningMs: warningMs,
         createdAt: now,
         warningAt: now + durationMs - warningMs,
         endsAt: now + durationMs
@@ -200,12 +202,13 @@ async function resetTimer(timerId) {
     await clearTimerAlarms(timerId);
     const now = Date.now();
     const fullDurationMs = getTimerDurationMs(timer);
+    const warningMs = getTimerWarningMs(timer);
     const resetTimer = {
         ...timer,
         createdAt: now,
         pausedAt: now,
         remainingMs: fullDurationMs,
-        warningAt: now + Math.max(0, fullDurationMs - timer.warningMinutes * 60 * 1000),
+        warningAt: now + Math.max(0, fullDurationMs - warningMs),
         endsAt: now + fullDurationMs,
         completedAt: undefined
     };
@@ -234,11 +237,12 @@ async function resumeTimer(timerId) {
         return;
     const now = Date.now();
     const remainingMs = timer.remainingMs ?? getTimerDurationMs(timer);
+    const warningMs = getTimerWarningMs(timer);
     const resumedTimer = {
         ...timer,
         pausedAt: undefined,
         remainingMs: undefined,
-        warningAt: now + Math.max(0, remainingMs - timer.warningMinutes * 60 * 1000),
+        warningAt: now + Math.max(0, remainingMs - warningMs),
         endsAt: now + remainingMs
     };
     timers = sortTimers(timers.map((item) => (item.id === timerId ? resumedTimer : item)));
@@ -431,7 +435,10 @@ function getMaxWarningSeconds(durationSeconds) {
     return Math.max(0, Math.floor(durationSeconds) - 1);
 }
 function getTimerDurationMs(timer) {
-    return Math.max(1, timer.endsAt - timer.createdAt);
+    return Math.max(1, timer.originalDurationMs ?? timer.endsAt - timer.createdAt);
+}
+function getTimerWarningMs(timer) {
+    return Math.max(0, timer.originalWarningMs ?? timer.warningMinutes * 60 * 1000);
 }
 function readNumberInput(input) {
     return Number(input.value);
