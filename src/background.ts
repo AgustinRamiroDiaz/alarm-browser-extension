@@ -10,14 +10,35 @@ type Timer = {
 
 type TimerAlarmKind = "warning" | "finish";
 type TimerSound = "warning" | "finish";
+type TestNotificationMessage = {
+  target: "timer-background";
+  type: "test-notification";
+};
+type TestNotificationResponse =
+  | {
+      ok: true;
+      notificationId: string;
+      visibleToChrome: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
 type TimerNotificationText = {
+  title: string;
+  message: string;
+};
+type TimerNotificationOptions = Omit<chrome.notifications.NotificationOptions, "iconUrl"> & {
+  type: "basic";
   title: string;
   message: string;
 };
 
 const TIMERS_KEY = "timers";
 const ALARM_PREFIX = "timer:";
-const ICON_URL = "icons/timer-128.png";
+const ICON_PATH = "icons/timer-128.png";
+const ICON_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAACR0lEQVR4nO3YMY4UURBEwb0JSIi74XF3TJzFxliBYH5n1q8wnt+dFTPSzNvX79/etbe39AMIAAEgAASAABAAAkAACAABIAAEgAD4rfefP2pLbwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwCQABIAAEgAAQAALg4zb+tFsNwG/9pQD86bMUQPqfv+kQxgJIH/0WCOMApI98G4RRANKHvRHBCADpY94MoR5A+oC3I6gGcOIYXz59/mObENQCOPVpTAFoRVAJ4OTXcRJAI4I6ACfHbwDQhqAKwOnhWwA0IagB8MToTQBaEAAAQP4hnhq8DUADgjiAJ8duBJBGAAAAe47fCiCJAAAA9hy/GUAKAQAA7Dl+O4AEAgAA2HP8CQCeRgAAAAAAAAAAG44/BcCTCAAAAAAAAAAAAAAAAAAAAACIPyMAYQANCAAIA0hDAKAEQAoBAIUgAFgO4EkIABQDeAICAAMAnEQAwCAEJyAAMBDBKyFcCaAdQQuEJ+8BwEEIAAwG8AoIAFwA4H8QAHARgn+B0H58AA5DAOBiBH8Dof34ABxGAMASBK8odQMASloJAILs8QEoaTWA7QjS21cA2IogvTkAAPQA2IYgvXUlgC0I0htXA7gdQXrbEQBuRZDedBSA2xCktxwJ4BYE6Q1HA5iOIL3dFQAmQkhvdSWAKQjSG10NoBlCepNVAJogpDdYDSAJIf3OAIQgpN8RgIdBpN8BAAEgAASAABAAAkAACAABIAAEgAAQAAJAAAgAASAABIAAEAD6uF+H1VmaGhp0uQAAAABJRU5ErkJggg==";
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 
 let creatingOffscreenDocument: Promise<void> | null = null;
@@ -32,6 +53,27 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   void handleAlarm(alarm);
+});
+
+chrome.notifications.onClosed.addListener((notificationId, byUser) => {
+  console.info("Timer notification closed:", { notificationId, byUser });
+});
+
+chrome.notifications.onClicked.addListener((notificationId) => {
+  console.info("Timer notification clicked:", { notificationId });
+});
+
+chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  if (!isTestNotificationMessage(message)) return false;
+
+  void createTestNotification()
+    .then((result) => sendResponse({ ok: true, ...result } satisfies TestNotificationResponse))
+    .catch((error: unknown) => {
+      console.warn("Test notification failed:", error);
+      sendResponse({ ok: false, error: formatError(error) } satisfies TestNotificationResponse);
+    });
+
+  return true;
 });
 
 async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
@@ -118,11 +160,21 @@ async function showNotification(
   notificationId: string,
   notification: TimerNotificationText
 ): Promise<void> {
-  await chrome.notifications.create(notificationId, {
+  const createdId = await createNotificationWithIconFallback(notificationId, {
     type: "basic",
-    iconUrl: ICON_URL,
     title: notification.title,
-    message: notification.message
+    message: notification.message,
+    contextMessage: "Timer Warnings",
+    eventTime: Date.now(),
+    priority: 2,
+    requireInteraction: true
+  });
+  const activeNotifications = await chrome.notifications.getAll();
+
+  console.info("Timer notification created:", {
+    requestedId: notificationId,
+    createdId,
+    visibleToChrome: Object.hasOwn(activeNotifications, createdId)
   });
 }
 
@@ -180,6 +232,68 @@ async function setTimers(timers: Timer[]): Promise<void> {
 
 function isTimerArray(value: unknown): value is Timer[] {
   return Array.isArray(value);
+}
+
+async function createTestNotification(): Promise<{ notificationId: string; visibleToChrome: boolean }> {
+  const notificationId = `test:${Date.now()}`;
+  const createdId = await createNotificationWithIconFallback(notificationId, {
+    type: "basic",
+    title: "Timer test notification",
+    message: "If banners are enabled, this should appear now.",
+    contextMessage: "Timer Warnings",
+    eventTime: Date.now(),
+    priority: 2,
+    requireInteraction: true
+  });
+  const activeNotifications = await chrome.notifications.getAll();
+
+  console.info("Test notification created:", {
+    requestedId: notificationId,
+    createdId,
+    activeNotifications
+  });
+
+  return {
+    notificationId: createdId,
+    visibleToChrome: Object.hasOwn(activeNotifications, createdId)
+  };
+}
+
+async function createNotificationWithIconFallback(
+  notificationId: string,
+  options: TimerNotificationOptions
+): Promise<string> {
+  try {
+    return await chrome.notifications.create(notificationId, {
+      ...options,
+      iconUrl: chrome.runtime.getURL(ICON_PATH)
+    });
+  } catch (error) {
+    if (!isImageDownloadError(error)) {
+      throw error;
+    }
+
+    console.warn("Notification icon file failed to load; retrying with embedded PNG icon.", error);
+    return chrome.notifications.create(notificationId, {
+      ...options,
+      iconUrl: ICON_DATA_URL
+    });
+  }
+}
+
+function isTestNotificationMessage(value: unknown): value is TestNotificationMessage {
+  if (!value || typeof value !== "object") return false;
+
+  const candidate = value as Partial<TestNotificationMessage>;
+  return candidate.target === "timer-background" && candidate.type === "test-notification";
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isImageDownloadError(error: unknown): boolean {
+  return formatError(error).includes("Unable to download all specified images");
 }
 
 export {};

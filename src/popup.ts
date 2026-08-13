@@ -9,6 +9,16 @@ type Timer = {
 };
 
 type TimerAlarmKind = "warning" | "finish";
+type TestNotificationResponse =
+  | {
+      ok: true;
+      notificationId: string;
+      visibleToChrome: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
 
 const TIMERS_KEY = "timers";
 const ALARM_PREFIX = "timer:";
@@ -24,6 +34,8 @@ const errorEl = queryElement<HTMLParagraphElement>("#formError");
 const listEl = queryElement<HTMLUListElement>("#timerList");
 const emptyEl = queryElement<HTMLParagraphElement>("#emptyState");
 const summaryEl = queryElement<HTMLParagraphElement>("#summary");
+const notificationStatusEl = queryElement<HTMLParagraphElement>("#notificationStatus");
+const testNotificationButton = queryElement<HTMLButtonElement>("#testNotification");
 
 let timers: Timer[] = [];
 let renderIntervalId: number | null = null;
@@ -54,12 +66,54 @@ listEl.addEventListener("click", (event) => {
   void handleTimerListClick(event);
 });
 
+testNotificationButton.addEventListener("click", () => {
+  void testNotification();
+});
+
 async function initializePopup(): Promise<void> {
   capWarningByDuration();
+  await renderNotificationStatus();
   timers = await getTimers();
   render();
 
   renderIntervalId = window.setInterval(render, 1000);
+}
+
+async function renderNotificationStatus(): Promise<void> {
+  const level = await chrome.notifications.getPermissionLevel();
+  const isGranted = level === "granted";
+
+  notificationStatusEl.textContent = isGranted
+    ? "Chrome notification access is granted."
+    : "Chrome notification access is blocked. Sounds can still play.";
+  notificationStatusEl.classList.toggle("blocked", !isGranted);
+}
+
+async function testNotification(): Promise<void> {
+  notificationStatusEl.textContent = "Creating test notification...";
+  notificationStatusEl.classList.remove("blocked");
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      target: "timer-background",
+      type: "test-notification"
+    });
+    if (!isTestNotificationResponse(response)) {
+      throw new Error(`Unexpected test response: ${JSON.stringify(response)}`);
+    }
+
+    if (!response.ok) {
+      throw new Error(response.error);
+    }
+
+    notificationStatusEl.textContent = response.visibleToChrome
+      ? `Test notification accepted: ${response.notificationId}`
+      : `Test notification created, but Chrome getAll() did not retain it: ${response.notificationId}`;
+    notificationStatusEl.classList.toggle("blocked", !response.visibleToChrome);
+  } catch (error) {
+    notificationStatusEl.textContent = `Test notification failed: ${formatError(error)}`;
+    notificationStatusEl.classList.add("blocked");
+  }
 }
 
 async function handleSubmit(event: SubmitEvent): Promise<void> {
@@ -253,6 +307,25 @@ async function setTimers(nextTimers: Timer[]): Promise<void> {
 
 function isTimerArray(value: unknown): value is Timer[] {
   return Array.isArray(value);
+}
+
+function isTestNotificationResponse(value: unknown): value is TestNotificationResponse {
+  if (!value || typeof value !== "object") return false;
+
+  const candidate = value as Partial<TestNotificationResponse>;
+  if (candidate.ok === false) {
+    return typeof candidate.error === "string";
+  }
+
+  return (
+    candidate.ok === true &&
+    typeof candidate.notificationId === "string" &&
+    typeof candidate.visibleToChrome === "boolean"
+  );
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function queryElement<T extends Element>(selector: string): T {

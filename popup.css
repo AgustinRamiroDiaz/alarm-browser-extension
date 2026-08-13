@@ -57,6 +57,43 @@ p {
   font-size: 13px;
 }
 
+.status-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 12px;
+}
+
+.status {
+  padding: 8px 10px;
+  color: var(--muted);
+  background: rgb(255 255 255 / 48%);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.status.blocked {
+  color: var(--danger);
+  background: rgb(163 61 49 / 8%);
+  border-color: rgb(163 61 49 / 28%);
+}
+
+.icon-button {
+  min-height: 0;
+  padding: 0 10px;
+  color: var(--accent);
+  background: rgb(255 255 255 / 48%);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.icon-button:hover {
+  color: #ffffff;
+  background: var(--accent);
+}
+
 .timer-form {
   display: grid;
   gap: 12px;
