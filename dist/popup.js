@@ -1,5 +1,8 @@
 const TIMERS_KEY = "timers";
 const ALARM_PREFIX = "timer:";
+const DEFAULT_DURATION_MINUTES = 25;
+const DEFAULT_WARNING_MINUTES = 5;
+const MAX_DURATION_MINUTES = 1440;
 const form = queryElement("#timerForm");
 const labelInput = queryElement("#label");
 const durationInput = queryElement("#duration");
@@ -21,10 +24,17 @@ window.addEventListener("unload", () => {
 form.addEventListener("submit", (event) => {
     void handleSubmit(event);
 });
+durationInput.addEventListener("input", () => {
+    capWarningByDuration();
+});
+warningInput.addEventListener("input", () => {
+    capWarningByDuration();
+});
 listEl.addEventListener("click", (event) => {
     void handleTimerListClick(event);
 });
 async function initializePopup() {
+    capWarningByDuration();
     timers = await getTimers();
     render();
     renderIntervalId = window.setInterval(render, 1000);
@@ -32,6 +42,7 @@ async function initializePopup() {
 async function handleSubmit(event) {
     event.preventDefault();
     errorEl.textContent = "";
+    capWarningByDuration();
     const durationMinutes = Number(durationInput.value);
     const warningMinutes = Number(warningInput.value);
     if (!Number.isFinite(durationMinutes) || durationMinutes < 1) {
@@ -43,7 +54,7 @@ async function handleSubmit(event) {
         return;
     }
     if (warningMinutes >= durationMinutes) {
-        errorEl.textContent = "Warning must happen before the timer ends.";
+        errorEl.textContent = "Warning must be less than the timer duration.";
         return;
     }
     const now = Date.now();
@@ -62,8 +73,9 @@ async function handleSubmit(event) {
     await setTimers(timers);
     await scheduleTimer(timer);
     form.reset();
-    durationInput.value = "25";
-    warningInput.value = "5";
+    durationInput.value = String(DEFAULT_DURATION_MINUTES);
+    warningInput.value = String(DEFAULT_WARNING_MINUTES);
+    capWarningByDuration();
     labelInput.focus();
     render();
 }
@@ -108,18 +120,51 @@ function render() {
         const content = document.createElement("div");
         const title = document.createElement("strong");
         title.textContent = timer.label;
-        const time = document.createElement("time");
-        time.dateTime = new Date(timer.endsAt).toISOString();
-        time.textContent = `${formatRemaining(timer.endsAt - now)} left`;
+        const meta = document.createElement("div");
+        meta.className = "timer-meta";
+        const warning = document.createElement("time");
+        warning.dateTime = new Date(timer.warningAt).toISOString();
+        warning.textContent = getWarningText(timer, now);
+        const finish = document.createElement("time");
+        finish.dateTime = new Date(timer.endsAt).toISOString();
+        finish.textContent = `Finishes in ${formatRemaining(timer.endsAt - now)}`;
         const cancel = document.createElement("button");
         cancel.type = "button";
         cancel.dataset.id = timer.id;
         cancel.textContent = "Cancel";
-        content.append(title, time);
+        meta.append(warning, finish);
+        content.append(title, meta);
         item.append(content, cancel);
         fragment.append(item);
     }
     listEl.append(fragment);
+}
+function capWarningByDuration() {
+    const durationMinutes = readNumberInput(durationInput);
+    const maxWarningMinutes = getMaxWarningMinutes(durationMinutes);
+    warningInput.max = String(maxWarningMinutes);
+    const warningMinutes = readNumberInput(warningInput);
+    if (warningMinutes > maxWarningMinutes) {
+        warningInput.value = String(maxWarningMinutes);
+    }
+}
+function getWarningText(timer, now) {
+    if (timer.warningMinutes <= 0) {
+        return "No warning";
+    }
+    if (timer.warningAt <= now) {
+        return "Warning sent";
+    }
+    return `Warning in ${formatRemaining(timer.warningAt - now)}`;
+}
+function getMaxWarningMinutes(durationMinutes) {
+    if (!Number.isFinite(durationMinutes) || durationMinutes < 1) {
+        return 0;
+    }
+    return Math.max(0, Math.min(MAX_DURATION_MINUTES - 1, Math.floor(durationMinutes) - 1));
+}
+function readNumberInput(input) {
+    return Number(input.value);
 }
 function formatRemaining(milliseconds) {
     const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
