@@ -245,6 +245,31 @@ button:hover {
   font-size: 13px;
 }
 
+.timer-progress {
+  position: relative;
+  overflow: hidden;
+  height: 5px;
+  margin-top: 9px;
+  background: rgb(37 111 104 / 12%);
+  border-radius: 999px;
+}
+
+.timer-progress-fill {
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 180ms ease;
+}
+
+.timer.completed .timer-progress-fill {
+  background: var(--muted);
+}
+
+.timer.paused .timer-progress-fill {
+  background: var(--accent-strong);
+}
+
 .timer-actions {
   display: grid;
   grid-auto-flow: column;

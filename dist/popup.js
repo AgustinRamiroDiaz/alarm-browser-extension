@@ -243,6 +243,18 @@ function render() {
         const finish = document.createElement("time");
         finish.dateTime = new Date(timer.endsAt).toISOString();
         finish.textContent = getFinishText(timer, now);
+        const progress = document.createElement("div");
+        progress.className = "timer-progress";
+        progress.setAttribute("role", "progressbar");
+        progress.setAttribute("aria-label", `${timer.label} progress`);
+        progress.setAttribute("aria-valuemin", "0");
+        progress.setAttribute("aria-valuemax", "100");
+        const progressValue = getProgressPercent(timer, now);
+        progress.setAttribute("aria-valuenow", String(Math.round(progressValue)));
+        const progressFill = document.createElement("div");
+        progressFill.className = "timer-progress-fill";
+        progressFill.style.width = `${progressValue}%`;
+        progress.append(progressFill);
         const actions = document.createElement("div");
         actions.className = "timer-actions";
         if (!isCompleted) {
@@ -265,7 +277,7 @@ function render() {
             icon: "×"
         }));
         meta.append(warning, finish);
-        content.append(title, meta);
+        content.append(title, meta, progress);
         item.append(content, actions);
         fragment.append(item);
     }
@@ -314,6 +326,20 @@ function getFinishText(timer, now) {
         return `Paused with ${formatRemaining(timer.remainingMs ?? timer.endsAt - now)} left`;
     }
     return `Finishes in ${formatRemaining(timer.endsAt - now)}`;
+}
+function getProgressPercent(timer, now) {
+    if (isTimerCompleted(timer, now)) {
+        return 100;
+    }
+    const totalMs = timer.durationMinutes * 60 * 1000;
+    const remainingMs = isTimerPaused(timer)
+        ? timer.remainingMs ?? totalMs
+        : Math.max(0, timer.endsAt - now);
+    const elapsedMs = totalMs - remainingMs;
+    return clamp((elapsedMs / totalMs) * 100, 0, 100);
+}
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
 }
 function isTimerCompleted(timer, now) {
     if (timer.pausedAt)
