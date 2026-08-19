@@ -5,6 +5,7 @@
   "description": "A Chrome extension for timers with warning notifications.",
   "scripts": {
     "build": "tsc",
+    "build:firefox": "npm run build && node scripts/package-firefox.mjs",
     "check": "tsc --noEmit"
   },
   "devDependencies": {

@@ -59,6 +59,12 @@ async function initializePopup() {
     renderIntervalId = window.setInterval(render, 1000);
 }
 async function renderNotificationStatus() {
+    if (typeof chrome.notifications.getPermissionLevel !== "function") {
+        notificationStatusEl.textContent =
+            "Notification access is controlled by Firefox settings.";
+        notificationStatusEl.classList.remove("blocked");
+        return;
+    }
     const level = await chrome.notifications.getPermissionLevel();
     const isGranted = level === "granted";
     notificationStatusEl.textContent = isGranted

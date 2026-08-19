@@ -1,3 +1,4 @@
+import { playSound } from "./audio.js";
 const TIMERS_KEY = "timers";
 const ALARM_PREFIX = "timer:";
 const ICON_PATH = "icons/timer-128.png";
@@ -130,12 +131,20 @@ async function showNotification(notificationId, notification) {
     });
 }
 async function playTimerSound(sound) {
+    if (!supportsOffscreenAudio()) {
+        await playSound(sound);
+        return;
+    }
     await ensureOffscreenDocument();
     await chrome.runtime.sendMessage({
         target: "timer-audio",
         type: "play-sound",
         sound
     });
+}
+function supportsOffscreenAudio() {
+    return (typeof chrome.offscreen?.createDocument === "function" &&
+        typeof chrome.runtime.getContexts === "function");
 }
 async function ensureOffscreenDocument() {
     const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
@@ -228,4 +237,3 @@ function formatError(error) {
 function isImageDownloadError(error) {
     return formatError(error).includes("Unable to download all specified images");
 }
-export {};

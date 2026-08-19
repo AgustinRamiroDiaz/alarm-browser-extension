@@ -1,3 +1,5 @@
+import { playSound, type TimerSound } from "./audio.js";
+
 type Timer = {
   id: string;
   label: string;
@@ -14,7 +16,6 @@ type Timer = {
 };
 
 type TimerAlarmKind = "warning" | "finish";
-type TimerSound = "warning" | "finish";
 type TestNotificationMessage = {
   target: "timer-background";
   type: "test-notification";
@@ -203,12 +204,24 @@ async function showNotification(
 }
 
 async function playTimerSound(sound: TimerSound): Promise<void> {
+  if (!supportsOffscreenAudio()) {
+    await playSound(sound);
+    return;
+  }
+
   await ensureOffscreenDocument();
   await chrome.runtime.sendMessage({
     target: "timer-audio",
     type: "play-sound",
     sound
   });
+}
+
+function supportsOffscreenAudio(): boolean {
+  return (
+    typeof chrome.offscreen?.createDocument === "function" &&
+    typeof chrome.runtime.getContexts === "function"
+  );
 }
 
 async function ensureOffscreenDocument(): Promise<void> {

@@ -1,6 +1,6 @@
 # Timer Warnings
 
-A minimal Chrome Manifest V3 extension for creating timers with a warning notification before they finish.
+A minimal Chrome and Firefox extension for creating timers with a warning notification before they finish.
 
 ## Try it locally
 
@@ -14,10 +14,12 @@ A minimal Chrome Manifest V3 extension for creating timers with a warning notifi
 
 ## Development
 
-Use `npm run check` for type-checking and `npm run build` to compile `src/*.ts` into `dist/*.js`.
+Use `npm run check` for type-checking and `npm run build` to compile `src/*.ts` into `dist/*.js` for Chrome.
 
-The extension uses Chrome alarms so timers keep working after the popup closes. Active timers are stored in `chrome.storage.local`.
+To build Firefox’s package, run `npm run build:firefox`. Load the generated `build/firefox` directory temporarily from `about:debugging` → **This Firefox** → **Load Temporary Add-on**.
 
-Warning and completion sounds are played by an offscreen document using Web Audio. Chrome notifications do not support custom sound files directly, so the background service worker creates `offscreen.html` when it needs audio playback.
+The extension uses browser alarms so timers keep working after the popup closes. Timers are stored in extension local storage and remain visible after completion until the user removes them.
+
+Chrome plays warning and completion sounds in an offscreen document using Web Audio. Firefox plays the same tones from its background page because Firefox does not implement Chrome’s offscreen document API.
 
 If notification images fail to load, Chrome rejects the notification request. The extension uses a local PNG icon for notifications because SVG icons can fail in `chrome.notifications`.

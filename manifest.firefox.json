@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Timer Warnings",
+  "description": "Create timers that warn you before they finish.",
+  "version": "0.1.0",
+  "permissions": ["alarms", "notifications", "storage"],
+  "icons": {
+    "128": "icons/timer-128.png"
+  },
+  "action": {
+    "default_title": "Timer Warnings",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icons/timer-128.png"
+    }
+  },
+  "background": {
+    "scripts": ["dist/background.js"],
+    "type": "module"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "timer-warnings@example.com",
+      "strict_min_version": "121.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  }
+}
