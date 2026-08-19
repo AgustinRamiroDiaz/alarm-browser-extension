@@ -63,15 +63,16 @@ async function handleAlarm(alarm) {
 async function restoreScheduledAlarms() {
     const timers = await getTimers();
     const now = Date.now();
-    const activeTimers = [];
+    const restoredTimers = [];
     let changed = false;
     for (const timer of timers) {
         if (timer.completedAt) {
-            activeTimers.push(timer);
+            // Completed timers stay in storage until the user removes them.
+            restoredTimers.push(timer);
             continue;
         }
         if (timer.pausedAt) {
-            activeTimers.push(timer);
+            restoredTimers.push(timer);
             continue;
         }
         if (timer.endsAt <= now) {
@@ -79,15 +80,15 @@ async function restoreScheduledAlarms() {
                 title: "Timer finished",
                 message: timer.label
             });
-            activeTimers.push({ ...timer, completedAt: now });
+            restoredTimers.push({ ...timer, completedAt: now });
             changed = true;
             continue;
         }
-        activeTimers.push(timer);
+        restoredTimers.push(timer);
         await scheduleTimerAlarms(timer);
     }
-    if (changed || activeTimers.length !== timers.length) {
-        await setTimers(activeTimers);
+    if (changed) {
+        await setTimers(restoredTimers);
     }
 }
 async function scheduleTimerAlarms(timer) {

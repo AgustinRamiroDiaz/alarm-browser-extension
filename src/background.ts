@@ -117,17 +117,18 @@ async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
 async function restoreScheduledAlarms(): Promise<void> {
   const timers = await getTimers();
   const now = Date.now();
-  const activeTimers: Timer[] = [];
+  const restoredTimers: Timer[] = [];
   let changed = false;
 
   for (const timer of timers) {
     if (timer.completedAt) {
-      activeTimers.push(timer);
+      // Completed timers stay in storage until the user removes them.
+      restoredTimers.push(timer);
       continue;
     }
 
     if (timer.pausedAt) {
-      activeTimers.push(timer);
+      restoredTimers.push(timer);
       continue;
     }
 
@@ -136,17 +137,17 @@ async function restoreScheduledAlarms(): Promise<void> {
         title: "Timer finished",
         message: timer.label
       });
-      activeTimers.push({ ...timer, completedAt: now });
+      restoredTimers.push({ ...timer, completedAt: now });
       changed = true;
       continue;
     }
 
-    activeTimers.push(timer);
+    restoredTimers.push(timer);
     await scheduleTimerAlarms(timer);
   }
 
-  if (changed || activeTimers.length !== timers.length) {
-    await setTimers(activeTimers);
+  if (changed) {
+    await setTimers(restoredTimers);
   }
 }
 
