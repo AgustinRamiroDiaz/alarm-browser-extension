@@ -219,7 +219,7 @@ button:hover {
 
 .timer {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   min-height: 62px;
@@ -227,6 +227,47 @@ button:hover {
   background: rgb(255 255 255 / 66%);
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.timer-drag-handle {
+  align-self: stretch;
+  width: 18px;
+  min-width: 18px;
+  min-height: 40px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: grab;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+  touch-action: none;
+}
+
+.timer-drag-handle:hover,
+.timer-drag-handle:focus-visible {
+  color: var(--accent);
+  background: transparent;
+  outline: none;
+}
+
+.timer-drag-handle:focus-visible {
+  box-shadow: 0 0 0 2px rgb(37 111 104 / 28%);
+}
+
+.timer-drag-handle:active {
+  cursor: grabbing;
+}
+
+.timer-list.reordering .timer {
+  transition: transform 120ms ease, opacity 120ms ease, box-shadow 120ms ease;
+}
+
+.timer.dragging {
+  opacity: 0.42;
+  border-color: var(--accent);
+  box-shadow: 0 10px 22px rgb(35 31 32 / 14%);
 }
 
 .timer.completed {

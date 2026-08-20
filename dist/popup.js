@@ -18,6 +18,7 @@ const notificationStatusEl = queryElement("#notificationStatus");
 const testNotificationButton = queryElement("#testNotification");
 let timers = [];
 let renderIntervalId = null;
+let draggedTimerId = null;
 document.addEventListener("DOMContentLoaded", () => {
     void initializePopup();
 });
@@ -46,6 +47,15 @@ debugWarningInput.addEventListener("input", () => {
 });
 listEl.addEventListener("click", (event) => {
     void handleTimerListClick(event);
+});
+listEl.addEventListener("dragstart", handleTimerDragStart);
+listEl.addEventListener("dragover", handleTimerDragOver);
+listEl.addEventListener("drop", (event) => {
+    void handleTimerDrop(event);
+});
+listEl.addEventListener("dragend", handleTimerDragEnd);
+listEl.addEventListener("keydown", (event) => {
+    void handleTimerListKeydown(event);
 });
 testNotificationButton.addEventListener("click", () => {
     void testNotification();
@@ -169,7 +179,7 @@ async function createTimer({ label, durationMinutes, warningMinutes, durationMs,
         warningAt: now + durationMs - warningMs,
         endsAt: now + durationMs
     };
-    timers = sortTimers([...timers, timer]);
+    timers = [...timers, timer];
     await setTimers(timers);
     await scheduleTimer(timer);
 }
@@ -218,7 +228,7 @@ async function resetTimer(timerId) {
         endsAt: now + fullDurationMs,
         completedAt: undefined
     };
-    timers = sortTimers(timers.map((item) => (item.id === timerId ? resetTimer : item)));
+    timers = timers.map((item) => (item.id === timerId ? resetTimer : item));
     await setTimers(timers);
     render();
 }
@@ -233,7 +243,7 @@ async function pauseTimer(timerId) {
         remainingMs: Math.max(0, timer.endsAt - now)
     };
     await clearTimerAlarms(timerId);
-    timers = sortTimers(timers.map((item) => (item.id === timerId ? pausedTimer : item)));
+    timers = timers.map((item) => (item.id === timerId ? pausedTimer : item));
     await setTimers(timers);
     render();
 }
@@ -251,7 +261,7 @@ async function resumeTimer(timerId) {
         warningAt: now + Math.max(0, remainingMs - warningMs),
         endsAt: now + remainingMs
     };
-    timers = sortTimers(timers.map((item) => (item.id === timerId ? resumedTimer : item)));
+    timers = timers.map((item) => (item.id === timerId ? resumedTimer : item));
     await setTimers(timers);
     await scheduleTimer(resumedTimer);
     render();
@@ -261,6 +271,111 @@ async function removeTimer(timerId) {
     await setTimers(timers);
     await clearTimerAlarms(timerId);
     render();
+}
+function handleTimerDragStart(event) {
+    const target = event.target;
+    if (!(target instanceof Element))
+        return;
+    const handle = target.closest(".timer-drag-handle[data-id]");
+    if (!handle?.dataset.id || !event.dataTransfer) {
+        event.preventDefault();
+        return;
+    }
+    draggedTimerId = handle.dataset.id;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", draggedTimerId);
+    const item = handle.closest(".timer");
+    item?.classList.add("dragging");
+    listEl.classList.add("reordering");
+}
+function handleTimerDragOver(event) {
+    if (!draggedTimerId)
+        return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "move";
+    }
+    const draggedItem = listEl.querySelector(`.timer[data-id="${CSS.escape(draggedTimerId)}"]`);
+    if (!draggedItem)
+        return;
+    const nextItem = getTimerAfterPointer(event.clientY);
+    if (nextItem) {
+        listEl.insertBefore(draggedItem, nextItem);
+    }
+    else {
+        listEl.append(draggedItem);
+    }
+}
+async function handleTimerDrop(event) {
+    if (!draggedTimerId)
+        return;
+    event.preventDefault();
+    try {
+        await persistRenderedTimerOrder();
+    }
+    finally {
+        finishTimerDrag();
+        render();
+    }
+}
+function handleTimerDragEnd() {
+    finishTimerDrag();
+    render();
+}
+async function handleTimerListKeydown(event) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown")
+        return;
+    const target = event.target;
+    if (!(target instanceof Element))
+        return;
+    const handle = target.closest(".timer-drag-handle[data-id]");
+    const timerId = handle?.dataset.id;
+    if (!handle || !timerId)
+        return;
+    const currentIndex = timers.findIndex((timer) => timer.id === timerId);
+    if (currentIndex < 0)
+        return;
+    const nextIndex = event.key === "ArrowUp" ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= timers.length)
+        return;
+    event.preventDefault();
+    const reorderedTimers = [...timers];
+    const [movedTimer] = reorderedTimers.splice(currentIndex, 1);
+    reorderedTimers.splice(nextIndex, 0, movedTimer);
+    timers = reorderedTimers;
+    await setTimers(timers);
+    render();
+    const movedHandle = listEl.querySelector(`.timer-drag-handle[data-id="${CSS.escape(timerId)}"]`);
+    movedHandle?.focus();
+}
+function getTimerAfterPointer(pointerY) {
+    const items = listEl.querySelectorAll(".timer:not(.dragging)");
+    let closestItem = null;
+    let closestOffset = Number.NEGATIVE_INFINITY;
+    for (const item of Array.from(items)) {
+        const box = item.getBoundingClientRect();
+        const offset = pointerY - box.top - box.height / 2;
+        if (offset < 0 && offset > closestOffset) {
+            closestOffset = offset;
+            closestItem = item;
+        }
+    }
+    return closestItem;
+}
+async function persistRenderedTimerOrder() {
+    const timerById = new Map(timers.map((timer) => [timer.id, timer]));
+    const orderedIds = Array.from(listEl.querySelectorAll(".timer[data-id]"))
+        .map((item) => item.dataset.id)
+        .filter((id) => Boolean(id));
+    timers = orderedIds
+        .map((id) => timerById.get(id))
+        .filter((timer) => Boolean(timer));
+    await setTimers(timers);
+}
+function finishTimerDrag() {
+    draggedTimerId = null;
+    listEl.classList.remove("reordering");
+    listEl.querySelector(".timer.dragging")?.classList.remove("dragging");
 }
 async function clearTimerAlarms(timerId) {
     await chrome.alarms.clear(makeAlarmName(timerId, "warning"));
@@ -279,8 +394,9 @@ async function scheduleTimer(timer) {
     }
 }
 function render() {
+    if (draggedTimerId)
+        return;
     const now = Date.now();
-    timers = sortTimers(timers);
     emptyEl.classList.toggle("hidden", timers.length > 0);
     listEl.textContent = "";
     const fragment = document.createDocumentFragment();
@@ -291,6 +407,15 @@ function render() {
         item.className = ["timer", isCompleted ? "completed" : "", isPaused ? "paused" : ""]
             .filter(Boolean)
             .join(" ");
+        item.dataset.id = timer.id;
+        const dragHandle = document.createElement("button");
+        dragHandle.type = "button";
+        dragHandle.className = "timer-drag-handle";
+        dragHandle.dataset.id = timer.id;
+        dragHandle.draggable = true;
+        dragHandle.title = "Drag to reorder";
+        dragHandle.setAttribute("aria-label", `Reorder ${timer.label}. Use arrow keys to move.`);
+        dragHandle.textContent = "⠿";
         const content = document.createElement("div");
         const title = document.createElement("strong");
         title.textContent = timer.label;
@@ -337,7 +462,7 @@ function render() {
         }
         meta.append(warning, finish);
         content.append(title, meta, progress);
-        item.append(content, actions);
+        item.append(dragHandle, content, actions);
         fragment.append(item);
     }
     listEl.append(fragment);
@@ -416,17 +541,6 @@ function isTimerCompleted(timer, now) {
 }
 function isTimerPaused(timer) {
     return Boolean(timer.pausedAt) && !timer.completedAt;
-}
-function sortTimers(nextTimers) {
-    const now = Date.now();
-    return [...nextTimers].sort((a, b) => {
-        const aCompleted = isTimerCompleted(a, now);
-        const bCompleted = isTimerCompleted(b, now);
-        if (aCompleted !== bCompleted) {
-            return aCompleted ? 1 : -1;
-        }
-        return a.endsAt - b.endsAt;
-    });
 }
 function getMaxWarningMinutes(durationMinutes) {
     if (!Number.isFinite(durationMinutes) || durationMinutes < 1) {

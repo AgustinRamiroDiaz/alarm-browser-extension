@@ -47,6 +47,7 @@ const testNotificationButton = queryElement<HTMLButtonElement>("#testNotificatio
 
 let timers: Timer[] = [];
 let renderIntervalId: number | null = null;
+let draggedTimerId: string | null = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   void initializePopup();
@@ -84,6 +85,16 @@ debugWarningInput.addEventListener("input", () => {
 
 listEl.addEventListener("click", (event) => {
   void handleTimerListClick(event);
+});
+
+listEl.addEventListener("dragstart", handleTimerDragStart);
+listEl.addEventListener("dragover", handleTimerDragOver);
+listEl.addEventListener("drop", (event) => {
+  void handleTimerDrop(event);
+});
+listEl.addEventListener("dragend", handleTimerDragEnd);
+listEl.addEventListener("keydown", (event) => {
+  void handleTimerListKeydown(event);
 });
 
 testNotificationButton.addEventListener("click", () => {
@@ -246,7 +257,7 @@ async function createTimer({
     endsAt: now + durationMs
   };
 
-  timers = sortTimers([...timers, timer]);
+  timers = [...timers, timer];
   await setTimers(timers);
   await scheduleTimer(timer);
 }
@@ -302,7 +313,7 @@ async function resetTimer(timerId: string): Promise<void> {
     completedAt: undefined
   };
 
-  timers = sortTimers(timers.map((item) => (item.id === timerId ? resetTimer : item)));
+  timers = timers.map((item) => (item.id === timerId ? resetTimer : item));
   await setTimers(timers);
   render();
 }
@@ -319,7 +330,7 @@ async function pauseTimer(timerId: string): Promise<void> {
   };
 
   await clearTimerAlarms(timerId);
-  timers = sortTimers(timers.map((item) => (item.id === timerId ? pausedTimer : item)));
+  timers = timers.map((item) => (item.id === timerId ? pausedTimer : item));
   await setTimers(timers);
   render();
 }
@@ -339,7 +350,7 @@ async function resumeTimer(timerId: string): Promise<void> {
     endsAt: now + remainingMs
   };
 
-  timers = sortTimers(timers.map((item) => (item.id === timerId ? resumedTimer : item)));
+  timers = timers.map((item) => (item.id === timerId ? resumedTimer : item));
   await setTimers(timers);
   await scheduleTimer(resumedTimer);
   render();
@@ -350,6 +361,128 @@ async function removeTimer(timerId: string): Promise<void> {
   await setTimers(timers);
   await clearTimerAlarms(timerId);
   render();
+}
+
+function handleTimerDragStart(event: DragEvent): void {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+
+  const handle = target.closest<HTMLElement>(".timer-drag-handle[data-id]");
+  if (!handle?.dataset.id || !event.dataTransfer) {
+    event.preventDefault();
+    return;
+  }
+
+  draggedTimerId = handle.dataset.id;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", draggedTimerId);
+
+  const item = handle.closest<HTMLLIElement>(".timer");
+  item?.classList.add("dragging");
+  listEl.classList.add("reordering");
+}
+
+function handleTimerDragOver(event: DragEvent): void {
+  if (!draggedTimerId) return;
+
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  const draggedItem = listEl.querySelector<HTMLLIElement>(
+    `.timer[data-id="${CSS.escape(draggedTimerId)}"]`
+  );
+  if (!draggedItem) return;
+
+  const nextItem = getTimerAfterPointer(event.clientY);
+  if (nextItem) {
+    listEl.insertBefore(draggedItem, nextItem);
+  } else {
+    listEl.append(draggedItem);
+  }
+}
+
+async function handleTimerDrop(event: DragEvent): Promise<void> {
+  if (!draggedTimerId) return;
+
+  event.preventDefault();
+  try {
+    await persistRenderedTimerOrder();
+  } finally {
+    finishTimerDrag();
+    render();
+  }
+}
+
+function handleTimerDragEnd(): void {
+  finishTimerDrag();
+  render();
+}
+
+async function handleTimerListKeydown(event: KeyboardEvent): Promise<void> {
+  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+
+  const handle = target.closest<HTMLButtonElement>(".timer-drag-handle[data-id]");
+  const timerId = handle?.dataset.id;
+  if (!handle || !timerId) return;
+
+  const currentIndex = timers.findIndex((timer) => timer.id === timerId);
+  if (currentIndex < 0) return;
+
+  const nextIndex = event.key === "ArrowUp" ? currentIndex - 1 : currentIndex + 1;
+  if (nextIndex < 0 || nextIndex >= timers.length) return;
+
+  event.preventDefault();
+  const reorderedTimers = [...timers];
+  const [movedTimer] = reorderedTimers.splice(currentIndex, 1);
+  reorderedTimers.splice(nextIndex, 0, movedTimer);
+  timers = reorderedTimers;
+  await setTimers(timers);
+  render();
+
+  const movedHandle = listEl.querySelector<HTMLButtonElement>(
+    `.timer-drag-handle[data-id="${CSS.escape(timerId)}"]`
+  );
+  movedHandle?.focus();
+}
+
+function getTimerAfterPointer(pointerY: number): HTMLLIElement | null {
+  const items = listEl.querySelectorAll<HTMLLIElement>(".timer:not(.dragging)");
+  let closestItem: HTMLLIElement | null = null;
+  let closestOffset = Number.NEGATIVE_INFINITY;
+
+  for (const item of Array.from(items)) {
+    const box = item.getBoundingClientRect();
+    const offset = pointerY - box.top - box.height / 2;
+    if (offset < 0 && offset > closestOffset) {
+      closestOffset = offset;
+      closestItem = item;
+    }
+  }
+
+  return closestItem;
+}
+
+async function persistRenderedTimerOrder(): Promise<void> {
+  const timerById = new Map(timers.map((timer) => [timer.id, timer]));
+  const orderedIds = Array.from(listEl.querySelectorAll<HTMLElement>(".timer[data-id]"))
+    .map((item) => item.dataset.id)
+    .filter((id): id is string => Boolean(id));
+
+  timers = orderedIds
+    .map((id) => timerById.get(id))
+    .filter((timer): timer is Timer => Boolean(timer));
+  await setTimers(timers);
+}
+
+function finishTimerDrag(): void {
+  draggedTimerId = null;
+  listEl.classList.remove("reordering");
+  listEl.querySelector(".timer.dragging")?.classList.remove("dragging");
 }
 
 async function clearTimerAlarms(timerId: string): Promise<void> {
@@ -372,8 +505,9 @@ async function scheduleTimer(timer: Timer): Promise<void> {
 }
 
 function render(): void {
+  if (draggedTimerId) return;
+
   const now = Date.now();
-  timers = sortTimers(timers);
 
   emptyEl.classList.toggle("hidden", timers.length > 0);
   listEl.textContent = "";
@@ -386,6 +520,16 @@ function render(): void {
     item.className = ["timer", isCompleted ? "completed" : "", isPaused ? "paused" : ""]
       .filter(Boolean)
       .join(" ");
+    item.dataset.id = timer.id;
+
+    const dragHandle = document.createElement("button");
+    dragHandle.type = "button";
+    dragHandle.className = "timer-drag-handle";
+    dragHandle.dataset.id = timer.id;
+    dragHandle.draggable = true;
+    dragHandle.title = "Drag to reorder";
+    dragHandle.setAttribute("aria-label", `Reorder ${timer.label}. Use arrow keys to move.`);
+    dragHandle.textContent = "⠿";
 
     const content = document.createElement("div");
 
@@ -448,7 +592,7 @@ function render(): void {
     }
     meta.append(warning, finish);
     content.append(title, meta, progress);
-    item.append(content, actions);
+    item.append(dragHandle, content, actions);
     fragment.append(item);
   }
 
@@ -558,21 +702,6 @@ function isTimerCompleted(timer: Timer, now: number): boolean {
 
 function isTimerPaused(timer: Timer): boolean {
   return Boolean(timer.pausedAt) && !timer.completedAt;
-}
-
-function sortTimers(nextTimers: Timer[]): Timer[] {
-  const now = Date.now();
-
-  return [...nextTimers].sort((a, b) => {
-    const aCompleted = isTimerCompleted(a, now);
-    const bCompleted = isTimerCompleted(b, now);
-
-    if (aCompleted !== bCompleted) {
-      return aCompleted ? 1 : -1;
-    }
-
-    return a.endsAt - b.endsAt;
-  });
 }
 
 function getMaxWarningMinutes(durationMinutes: number): number {
